@@ -378,7 +378,7 @@ class Media {
 }
 
 class AppEngine {
-  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 2, scrollEase = 0.05 } = {}) {
+  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 1.2, scrollEase = 0.08 } = {}) {
     document.documentElement.classList.remove('no-js');
     this.container = container;
     this.scrollSpeed = scrollSpeed;
@@ -388,6 +388,7 @@ class AppEngine {
     this.isDown = false;
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
+    this.velocity = 0;
 
     this.createRenderer();
     this.createCamera();
@@ -437,7 +438,7 @@ class AppEngine {
   }
   
   onTouchDown(e) {
-    if (e.touches && e.touches.length > 1) return; // Ignore multi-touch pinch vectors
+    if (e.touches && e.touches.length > 1) return;
 
     this.isDown = true;
     this.isScrollingPage = false;
@@ -447,6 +448,11 @@ class AppEngine {
     const touch = e.touches ? e.touches[0] : e;
     this.start = touch.clientX;
     this.startY = touch.clientY;
+    
+    // Kinetic physics initialization
+    this.lastX = this.start;
+    this.lastTime = performance.now();
+    this.velocity = 0;
   }
   
   onTouchMove(e) {
@@ -456,7 +462,6 @@ class AppEngine {
     const x = touch.clientX;
     const y = touch.clientY;
     
-    // Evaluate user intent (Horizontal rotation vs Vertical document scroll)
     if (!this.isDraggingGallery) {
       const dx = Math.abs(x - this.start);
       const dy = Math.abs(y - this.startY);
@@ -467,17 +472,38 @@ class AppEngine {
         return;
       } else if (dx > dy && dx > 4) {
         this.isDraggingGallery = true;
+        // Calibrate positions to prevent visual jumping upon activation threshold
+        this.start = x;
+        this.scroll.position = this.scroll.current;
+        this.lastX = x;
+        this.lastTime = performance.now();
+        this.velocity = 0;
       } else {
         return;
       }
     }
     
-    // FIX: Force mobile phone OS to drop native edge gestures and process WebGL scroll target
     if (this.isDraggingGallery && e.cancelable) {
       e.preventDefault();
     }
     
-    const distance = (this.start - x) * (this.scrollSpeed * 0.025);
+    const now = performance.now();
+    const elapsed = now - this.lastTime;
+    
+    // Dynamic Mapping: Translates Screen Pixels cleanly to WebGL Viewport coordinates
+    const viewportRatio = this.viewport.width / this.screen.width;
+    const currentDeltaX = (this.lastX - x) * viewportRatio * this.scrollSpeed;
+    
+    if (elapsed > 0) {
+      // Exponential low-pass filter for smooth velocity mapping
+      const instantVelocity = currentDeltaX / elapsed; 
+      this.velocity = this.velocity * 0.5 + instantVelocity * 0.5;
+    }
+    
+    this.lastX = x;
+    this.lastTime = now;
+    
+    const distance = (this.start - x) * viewportRatio * this.scrollSpeed;
     this.scroll.target = this.scroll.position + distance;
   }
   
@@ -485,12 +511,19 @@ class AppEngine {
     this.isDown = false;
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
+    
+    // Kinetic Momentum: If moving quickly on lift, fling the gallery forward cleanly
+    if (Math.abs(this.velocity) > 0.002) {
+      this.scroll.target += this.velocity * 160; 
+    }
+    
     this.onCheck();
+    this.velocity = 0;
   }
   
   onWheel(e) {
     const delta = e.deltaY || e.wheelDelta || e.detail;
-    this.scroll.target += (delta > 0 ? this.scrollSpeed : -this.scrollSpeed) * 0.2;
+    this.scroll.target += (delta > 0 ? this.scrollSpeed : -this.scrollSpeed) * 0.4;
     this.onCheckDebounce();
   }
   
@@ -560,12 +593,10 @@ class AppEngine {
     window.addEventListener('resize', this.boundOnResize);
     window.addEventListener('wheel', this.boundOnWheel, { passive: true });
     
-    // Desktop Pointer Pipeline
     this.container?.addEventListener('mousedown', this.boundOnTouchDown);
     window.addEventListener('mousemove', this.boundOnTouchMove);
     window.addEventListener('mouseup', this.boundOnTouchUp);
     
-    // FIX: Enforce non-passive matrix on touchmove to allow call context blocking
     this.container?.addEventListener('touchstart', this.boundOnTouchDown, { passive: true });
     window.addEventListener('touchmove', this.boundOnTouchMove, { passive: false });
     window.addEventListener('touchend', this.boundOnTouchUp, { passive: true });
@@ -598,7 +629,7 @@ class AppEngine {
 }
 
 export default function CircularGallery({
-  items, bend = 3, textColor = '#ffffff', borderRadius = 0.05, font = 'bold 30px Figtree', fontUrl, scrollSpeed = 2, scrollEase = 0.05
+  items, bend = 3, textColor = '#ffffff', borderRadius = 0.05, font = 'bold 30px Figtree', fontUrl, scrollSpeed = 1.2, scrollEase = 0.08
 }) {
   const containerRef = useRef(null);
   useEffect(() => {
@@ -625,7 +656,7 @@ export default function CircularGallery({
       tabIndex={0}
       role="region"
       aria-label="Circular image gallery."
-      style={{ touchAction: 'pan-y' }} // Reinforcement style block for hybrid viewports
+      style={{ touchAction: 'pan-y' }}
     />
   );
 }
