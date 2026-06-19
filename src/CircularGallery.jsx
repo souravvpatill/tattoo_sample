@@ -385,7 +385,6 @@ class AppEngine {
     this.scroll = { ease: scrollEase, current: 0, target: 0, last: 0 };
     this.onCheckDebounce = debounce(this.onCheck, 200);
     
-    // Axis tracking states to completely solve mobile lockups
     this.isDown = false;
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
@@ -438,12 +437,13 @@ class AppEngine {
   }
   
   onTouchDown(e) {
+    if (e.touches && e.touches.length > 1) return; // Ignore multi-touch pinch vectors
+
     this.isDown = true;
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
     this.scroll.position = this.scroll.current;
     
-    // Abstracting desktop mouse vectors and mobile unified touches
     const touch = e.touches ? e.touches[0] : e;
     this.start = touch.clientX;
     this.startY = touch.clientY;
@@ -456,21 +456,25 @@ class AppEngine {
     const x = touch.clientX;
     const y = touch.clientY;
     
-    // Smart intent resolution logic
+    // Evaluate user intent (Horizontal rotation vs Vertical document scroll)
     if (!this.isDraggingGallery) {
       const dx = Math.abs(x - this.start);
       const dy = Math.abs(y - this.startY);
       
-      // If the vector is primarily vertical, disengage the WebGL canvas and let the page scroll natively
-      if (dy > dx && dy > 6) {
+      if (dy > dx && dy > 4) {
         this.isScrollingPage = true;
         this.isDown = false;
         return;
-      } else if (dx > dy && dx > 6) {
+      } else if (dx > dy && dx > 4) {
         this.isDraggingGallery = true;
       } else {
-        return; // Filter out microscopic threshold jitters
+        return;
       }
+    }
+    
+    // FIX: Force mobile phone OS to drop native edge gestures and process WebGL scroll target
+    if (this.isDraggingGallery && e.cancelable) {
+      e.preventDefault();
     }
     
     const distance = (this.start - x) * (this.scrollSpeed * 0.025);
@@ -556,16 +560,16 @@ class AppEngine {
     window.addEventListener('resize', this.boundOnResize);
     window.addEventListener('wheel', this.boundOnWheel, { passive: true });
     
-    // Desktop: Drag interactions kick off ONLY inside the active gallery container
+    // Desktop Pointer Pipeline
     this.container?.addEventListener('mousedown', this.boundOnTouchDown);
     window.addEventListener('mousemove', this.boundOnTouchMove);
     window.addEventListener('mouseup', this.boundOnTouchUp);
     
-    // Mobile Touch Matrix: Listens directly inside the canvas wrap boundary
+    // FIX: Enforce non-passive matrix on touchmove to allow call context blocking
     this.container?.addEventListener('touchstart', this.boundOnTouchDown, { passive: true });
-    window.addEventListener('touchmove', this.boundOnTouchMove, { passive: true });
-    window.addEventListener('touchend', this.boundOnTouchUp);
-    window.addEventListener('touchcancel', this.boundOnTouchUp);
+    window.addEventListener('touchmove', this.boundOnTouchMove, { passive: false });
+    window.addEventListener('touchend', this.boundOnTouchUp, { passive: true });
+    window.addEventListener('touchcancel', this.boundOnTouchUp, { passive: true });
     
     this.container?.addEventListener('keydown', this.boundOnKeyDown);
   }
@@ -621,7 +625,7 @@ export default function CircularGallery({
       tabIndex={0}
       role="region"
       aria-label="Circular image gallery."
-      style={{ touchAction: 'pan-y' }} // Inline reinforcement for phone browsers
+      style={{ touchAction: 'pan-y' }} // Reinforcement style block for hybrid viewports
     />
   );
 }
