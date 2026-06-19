@@ -235,14 +235,14 @@ class Media {
         uniform float uTime;
         uniform float uSpeed;
         varying vec2 vUv;
-        varying vec4 vScreenPos; // Added to pass screen coordinates
+        varying vec4 vScreenPos;
 
         void main() {
           vUv = uv;
           vec3 p = position;
           p.z = (sin(p.x * 4.0 + uTime) * 1.5 + cos(p.y * 2.0 + uTime) * 1.5) * (0.1 + uSpeed * 0.5);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-          vScreenPos = gl_Position; // Capture screen position
+          vScreenPos = gl_Position;
         }
       `,
       fragment: `
@@ -269,22 +269,14 @@ class Media {
             vUv.y * ratio.y + (1.0 - ratio.y) * 0.5
           );
           
-          // 1. Get the original full-color pixel
           vec4 color = texture2D(tMap, uv);
-          
-          // 2. Convert to grayscale mathematically
           float grayscale = dot(color.rgb, vec3(0.299, 0.587, 0.114));
           vec3 bwColor = vec3(grayscale);
 
-          // 3. Determine how close this pixel is to the absolute horizontal center of the screen
-          // vScreenPos.x / vScreenPos.w normalizes the coordinate from -1.0 to 1.0
           float screenX = vScreenPos.x / vScreenPos.w;
-          
-          // 4. Create a sharp focus mask. radius dictates the "spotlight" width.
           float radius = 0.25; 
           float colorIntensity = smoothstep(radius, 0.0, abs(screenX));
 
-          // 5. Mix the grayscale and full color based on center proximity
           vec3 finalColor = mix(bwColor, color.rgb, colorIntensity);
 
           float d = roundedBoxSDF(vUv - 0.5, vec2(0.5 - uBorderRadius), uBorderRadius);
@@ -392,6 +384,12 @@ class AppEngine {
     this.scrollSpeed = scrollSpeed;
     this.scroll = { ease: scrollEase, current: 0, target: 0, last: 0 };
     this.onCheckDebounce = debounce(this.onCheck, 200);
+    
+    // Axis tracking states to completely solve mobile lockups
+    this.isDown = false;
+    this.isScrollingPage = false;
+    this.isDraggingGallery = false;
+
     this.createRenderer();
     this.createCamera();
     this.createScene();
@@ -441,19 +439,48 @@ class AppEngine {
   
   onTouchDown(e) {
     this.isDown = true;
+    this.isScrollingPage = false;
+    this.isDraggingGallery = false;
     this.scroll.position = this.scroll.current;
-    this.start = e.touches ? e.touches[0].clientX : e.clientX;
+    
+    // Abstracting desktop mouse vectors and mobile unified touches
+    const touch = e.touches ? e.touches[0] : e;
+    this.start = touch.clientX;
+    this.startY = touch.clientY;
   }
   
   onTouchMove(e) {
-    if (!this.isDown) return;
-    const x = e.touches ? e.touches[0].clientX : e.clientX;
+    if (!this.isDown || this.isScrollingPage) return;
+    
+    const touch = e.touches ? e.touches[0] : e;
+    const x = touch.clientX;
+    const y = touch.clientY;
+    
+    // Smart intent resolution logic
+    if (!this.isDraggingGallery) {
+      const dx = Math.abs(x - this.start);
+      const dy = Math.abs(y - this.startY);
+      
+      // If the vector is primarily vertical, disengage the WebGL canvas and let the page scroll natively
+      if (dy > dx && dy > 6) {
+        this.isScrollingPage = true;
+        this.isDown = false;
+        return;
+      } else if (dx > dy && dx > 6) {
+        this.isDraggingGallery = true;
+      } else {
+        return; // Filter out microscopic threshold jitters
+      }
+    }
+    
     const distance = (this.start - x) * (this.scrollSpeed * 0.025);
     this.scroll.target = this.scroll.position + distance;
   }
   
   onTouchUp() {
     this.isDown = false;
+    this.isScrollingPage = false;
+    this.isDraggingGallery = false;
     this.onCheck();
   }
   
@@ -528,12 +555,18 @@ class AppEngine {
 
     window.addEventListener('resize', this.boundOnResize);
     window.addEventListener('wheel', this.boundOnWheel, { passive: true });
-    window.addEventListener('mousedown', this.boundOnTouchDown);
+    
+    // Desktop: Drag interactions kick off ONLY inside the active gallery container
+    this.container?.addEventListener('mousedown', this.boundOnTouchDown);
     window.addEventListener('mousemove', this.boundOnTouchMove);
     window.addEventListener('mouseup', this.boundOnTouchUp);
-    window.addEventListener('touchstart', this.boundOnTouchDown, { passive: true });
+    
+    // Mobile Touch Matrix: Listens directly inside the canvas wrap boundary
+    this.container?.addEventListener('touchstart', this.boundOnTouchDown, { passive: true });
     window.addEventListener('touchmove', this.boundOnTouchMove, { passive: true });
     window.addEventListener('touchend', this.boundOnTouchUp);
+    window.addEventListener('touchcancel', this.boundOnTouchUp);
+    
     this.container?.addEventListener('keydown', this.boundOnKeyDown);
   }
   
@@ -541,17 +574,21 @@ class AppEngine {
     window.cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.boundOnResize);
     window.removeEventListener('wheel', this.boundOnWheel);
-    window.removeEventListener('mousedown', this.boundOnTouchDown);
+    
+    if (this.container) {
+      this.container.removeEventListener('mousedown', this.boundOnTouchDown);
+      this.container.removeEventListener('touchstart', this.boundOnTouchDown);
+      this.container.removeEventListener('keydown', this.boundOnKeyDown);
+    }
+    
     window.removeEventListener('mousemove', this.boundOnTouchMove);
     window.removeEventListener('mouseup', this.boundOnTouchUp);
-    window.removeEventListener('touchstart', this.boundOnTouchDown);
     window.removeEventListener('touchmove', this.boundOnTouchMove);
     window.removeEventListener('touchend', this.boundOnTouchUp);
+    window.removeEventListener('touchcancel', this.boundOnTouchUp);
+    
     if (this.renderer?.gl?.canvas?.parentNode) {
       this.renderer.gl.canvas.parentNode.removeChild(this.renderer.gl.canvas);
-    }
-    if (this.container) {
-      this.container.removeEventListener('keydown', this.boundOnKeyDown);
     }
   }
 }
@@ -584,6 +621,7 @@ export default function CircularGallery({
       tabIndex={0}
       role="region"
       aria-label="Circular image gallery."
+      style={{ touchAction: 'pan-y' }} // Inline reinforcement for phone browsers
     />
   );
 }
