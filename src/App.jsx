@@ -575,7 +575,7 @@ const styles = {
 
   // Hero Presentation Canvas Definitions
   heroSection: { position: 'relative', height: '100vh', width: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' },
-  heroAssetBackgroundMask: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url('/assets/hero_tattoo.jpg')", backgroundSize: 'cover', backgroundPosition: 'center', transform: 'scale(1.02)' },
+  heroAssetBackgroundMask: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url('/assets/hero_tattoo.webp')", backgroundSize: 'cover', backgroundPosition: 'center', transform: 'scale(1.02)' },
   heroOverlayTint: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(2, 2, 2, 0.82)', zIndex: 1 },
   heroContentContainer: { position: 'relative', zIndex: 2, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', padding: '0 20px', boxSizing: 'border-box' },
   heroDataMetricsBadge: { display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 14px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', marginBottom: '30px' },

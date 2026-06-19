@@ -379,7 +379,7 @@ class Media {
 
 class AppEngine {
   // Sensitivity boosted to 4.5; scrollEase dropped to 0.045 for a frictionless, ultra-glide texture
-  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 20, scrollEase = 0.045 } = {}) {
+  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 60, scrollEase = 0.045 } = {}) {
     document.documentElement.classList.remove('no-js');
     this.container = container;
     this.scrollSpeed = scrollSpeed;
