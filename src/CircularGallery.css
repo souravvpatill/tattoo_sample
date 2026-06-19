@@ -1,0 +1,20 @@
+.circular-gallery {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.circular-gallery canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.no-js .circular-gallery {
+  /* fallback styles when JS is disabled */
+  background: #000;
+}
