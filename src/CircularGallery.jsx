@@ -378,17 +378,20 @@ class Media {
 }
 
 class AppEngine {
-  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 1.2, scrollEase = 0.08 } = {}) {
+  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 1.5, scrollEase = 0.06 } = {}) {
     document.documentElement.classList.remove('no-js');
     this.container = container;
     this.scrollSpeed = scrollSpeed;
     this.scroll = { ease: scrollEase, current: 0, target: 0, last: 0 };
-    this.onCheckDebounce = debounce(this.onCheck, 200);
+    this.onCheckDebounce = debounce(this.onCheck, 250);
     
     this.isDown = false;
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
+    
+    // Living kinetic vectors
     this.velocity = 0;
+    this.isSnapping = false;
 
     this.createRenderer();
     this.createCamera();
@@ -443,15 +446,14 @@ class AppEngine {
     this.isDown = true;
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
+    this.isSnapping = false;
     this.scroll.position = this.scroll.current;
     
     const touch = e.touches ? e.touches[0] : e;
     this.start = touch.clientX;
     this.startY = touch.clientY;
     
-    // Kinetic physics initialization
     this.lastX = this.start;
-    this.lastTime = performance.now();
     this.velocity = 0;
   }
   
@@ -472,11 +474,9 @@ class AppEngine {
         return;
       } else if (dx > dy && dx > 4) {
         this.isDraggingGallery = true;
-        // Calibrate positions to prevent visual jumping upon activation threshold
         this.start = x;
         this.scroll.position = this.scroll.current;
         this.lastX = x;
-        this.lastTime = performance.now();
         this.velocity = 0;
       } else {
         return;
@@ -487,21 +487,12 @@ class AppEngine {
       e.preventDefault();
     }
     
-    const now = performance.now();
-    const elapsed = now - this.lastTime;
-    
-    // Dynamic Mapping: Translates Screen Pixels cleanly to WebGL Viewport coordinates
     const viewportRatio = this.viewport.width / this.screen.width;
-    const currentDeltaX = (this.lastX - x) * viewportRatio * this.scrollSpeed;
+    const instantaneousDelta = (this.lastX - x) * viewportRatio * this.scrollSpeed;
     
-    if (elapsed > 0) {
-      // Exponential low-pass filter for smooth velocity mapping
-      const instantVelocity = currentDeltaX / elapsed; 
-      this.velocity = this.velocity * 0.5 + instantVelocity * 0.5;
-    }
-    
+    // Low-pass filter weight to capture immediate hand gesture momentum
+    this.velocity = this.velocity * 0.4 + instantaneousDelta * 0.6;
     this.lastX = x;
-    this.lastTime = now;
     
     const distance = (this.start - x) * viewportRatio * this.scrollSpeed;
     this.scroll.target = this.scroll.position + distance;
@@ -511,23 +502,23 @@ class AppEngine {
     this.isDown = false;
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
-    
-    // Kinetic Momentum: If moving quickly on lift, fling the gallery forward cleanly
-    if (Math.abs(this.velocity) > 0.002) {
-      this.scroll.target += this.velocity * 160; 
+
+    // Do NOT trigger instant hard snapping here anymore.
+    // If a valid throw velocity remains, let the continuous physics loop coast it smoothly.
+    if (Math.abs(this.velocity) < 0.01) {
+      this.onCheck();
     }
-    
-    this.onCheck();
-    this.velocity = 0;
   }
   
   onWheel(e) {
     const delta = e.deltaY || e.wheelDelta || e.detail;
+    this.isSnapping = false;
     this.scroll.target += (delta > 0 ? this.scrollSpeed : -this.scrollSpeed) * 0.4;
     this.onCheckDebounce();
   }
   
   onKeyDown(e) {
+    this.isSnapping = false;
     switch (e.key) {
       case 'ArrowRight':
         e.preventDefault();
@@ -551,6 +542,7 @@ class AppEngine {
 
   onCheck() {
     if (!this.medias || !this.medias[0]) return;
+    this.isSnapping = true;
     const width = this.medias[0].width;
     const itemIndex = Math.round(Math.abs(this.scroll.target) / width);
     const item = width * itemIndex;
@@ -572,6 +564,23 @@ class AppEngine {
   }
   
   update() {
+    // Continuous Physics Engine Loop
+    if (!this.isDown) {
+      // 1. If user isn't holding down, continuously feed remaining throw velocity into target
+      this.scroll.target += this.velocity;
+      
+      // 2. Apply fluid kinematic friction (decay velocity by 6% every individual frame)
+      this.velocity *= 0.94;
+      
+      // 3. When momentum naturally runs dry, smoothly slide into correct item slots
+      if (Math.abs(this.velocity) < 0.005 && !this.isSnapping) {
+        this.velocity = 0;
+        this.onCheck();
+      }
+    } else {
+      this.isSnapping = false;
+    }
+
     this.scroll.current = lerp(this.scroll.current, this.scroll.target, this.scroll.ease);
     const direction = this.scroll.current > this.scroll.last ? 'right' : 'left';
     if (this.medias) {
@@ -629,7 +638,7 @@ class AppEngine {
 }
 
 export default function CircularGallery({
-  items, bend = 3, textColor = '#ffffff', borderRadius = 0.05, font = 'bold 30px Figtree', fontUrl, scrollSpeed = 1.2, scrollEase = 0.08
+  items, bend = 3, textColor = '#ffffff', borderRadius = 0.05, font = 'bold 30px Figtree', fontUrl, scrollSpeed = 1.5, scrollEase = 0.06
 }) {
   const containerRef = useRef(null);
   useEffect(() => {
