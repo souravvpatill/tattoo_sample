@@ -378,7 +378,8 @@ class Media {
 }
 
 class AppEngine {
-  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 1.5, scrollEase = 0.06 } = {}) {
+  // Sensitivity boosted to 4.5; scrollEase dropped to 0.045 for a frictionless, ultra-glide texture
+  constructor(container, { items, bend, textColor = '#ffffff', borderRadius = 0, font = 'bold 30px Figtree', scrollSpeed = 4.5, scrollEase = 0.045 } = {}) {
     document.documentElement.classList.remove('no-js');
     this.container = container;
     this.scrollSpeed = scrollSpeed;
@@ -389,7 +390,6 @@ class AppEngine {
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
     
-    // Living kinetic vectors
     this.velocity = 0;
     this.isSnapping = false;
 
@@ -453,7 +453,7 @@ class AppEngine {
     this.start = touch.clientX;
     this.startY = touch.clientY;
     
-    this.lastX = this.start;
+    this.lastX = touch.clientX;
     this.velocity = 0;
   }
   
@@ -488,10 +488,11 @@ class AppEngine {
     }
     
     const viewportRatio = this.viewport.width / this.screen.width;
+    // Massive Input Shift: Multiplying basic swipe delta to respond instantly to central screen gestures
     const instantaneousDelta = (this.lastX - x) * viewportRatio * this.scrollSpeed;
     
-    // Low-pass filter weight to capture immediate hand gesture momentum
-    this.velocity = this.velocity * 0.4 + instantaneousDelta * 0.6;
+    // Aggressive filtering: captures fast flicks efficiently
+    this.velocity = this.velocity * 0.3 + instantaneousDelta * 0.7;
     this.lastX = x;
     
     const distance = (this.start - x) * viewportRatio * this.scrollSpeed;
@@ -503,9 +504,10 @@ class AppEngine {
     this.isScrollingPage = false;
     this.isDraggingGallery = false;
 
-    // Do NOT trigger instant hard snapping here anymore.
-    // If a valid throw velocity remains, let the continuous physics loop coast it smoothly.
-    if (Math.abs(this.velocity) < 0.01) {
+    // Amplify terminal release speed so that even a brief throw moves several elements
+    if (Math.abs(this.velocity) > 0.01) {
+      this.velocity *= 2.2; 
+    } else {
       this.onCheck();
     }
   }
@@ -564,15 +566,12 @@ class AppEngine {
   }
   
   update() {
-    // Continuous Physics Engine Loop
     if (!this.isDown) {
-      // 1. If user isn't holding down, continuously feed remaining throw velocity into target
       this.scroll.target += this.velocity;
       
-      // 2. Apply fluid kinematic friction (decay velocity by 6% every individual frame)
-      this.velocity *= 0.94;
+      // Fluid kinetic resistance coefficient (0.96 leaves plenty of glide room)
+      this.velocity *= 0.96;
       
-      // 3. When momentum naturally runs dry, smoothly slide into correct item slots
       if (Math.abs(this.velocity) < 0.005 && !this.isSnapping) {
         this.velocity = 0;
         this.onCheck();
@@ -638,7 +637,7 @@ class AppEngine {
 }
 
 export default function CircularGallery({
-  items, bend = 3, textColor = '#ffffff', borderRadius = 0.05, font = 'bold 30px Figtree', fontUrl, scrollSpeed = 1.5, scrollEase = 0.06
+  items, bend = 3, textColor = '#ffffff', borderRadius = 0.05, font = 'bold 30px Figtree', fontUrl, scrollSpeed = 4.5, scrollEase = 0.045
 }) {
   const containerRef = useRef(null);
   useEffect(() => {
